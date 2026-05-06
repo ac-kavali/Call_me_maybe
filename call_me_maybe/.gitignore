@@ -1,0 +1,6 @@
+__pycache__/
+.mypycache
+.venv
+data/output/
+*pyc
+uv.lock
