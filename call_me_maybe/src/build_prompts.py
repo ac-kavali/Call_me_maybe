@@ -1,28 +1,33 @@
-from src.argparsing import arg_parsing
-from typing import List
 
-
-functions_definition, input_json, output = arg_parsing()
-
-def build_prompt_for_function(
+def build_function_selection_prompt(
     user_prompt: str,
-    functions: List[functions_definition]
+    functions,
 ) -> str:
-    """Build the prompt for function name selection.
-    Args:
-        user_prompt: the natural language request from the user.
-        functions: list of available function definitions.
-    Returns:
-        A prompt string ending with an opening quote so the LLM
-        starts generating the function name immediately.
     """
-    lines = ["You are a function dispatcher.\n", "Available functions:"]
-    for fn in functions:
-        lines.append(f"- {fn.name}: {fn.description}")
-    lines.append(f"\nUser request: {user_prompt}")
-    lines.append('\nCall the correct function.')
-    lines.append('\nFunction name: "')
-    return "\n".join(lines)
+    Build a prompt that asks the LLM to select the correct function name.
+
+    The prompt is designed so the model's next token is naturally one of
+    the valid function names. We rely on constrained decoding — not this
+    prompt alone — to enforce the output, but a clear prompt still helps.
+
+    Args:
+        user_prompt: The user's natural language request.
+        functions: Available function definitions.
+
+    Returns:
+        A formatted prompt string.
+    """
+    fn_descriptions = "\n".join(
+        f'  - "{fn.name}": {fn.description}' for fn in functions
+    )
+
+    return (
+        f"You are a function-calling assistant.\n"
+        f"Select the best function for the user's request.\n\n"
+        f"Available functions:\n{fn_descriptions}\n\n"
+        f'User request: "{user_prompt}"\n\n'
+        f"The function to call is: \""
+    )
 
 
 def build_prompt_for_argument(
