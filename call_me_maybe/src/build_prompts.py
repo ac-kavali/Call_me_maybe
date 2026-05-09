@@ -1,3 +1,4 @@
+from src.models import FunctionDef
 
 def build_function_selection_prompt(
     user_prompt: str,
@@ -24,36 +25,72 @@ def build_function_selection_prompt(
     return (
         f"You are a function-calling assistant.\n"
         f"Select the best function for the user's request.\n\n"
+        f'Example: prompt contains "Greet" you return "fn_greet"'
         f"Available functions:\n{fn_descriptions}\n\n"
-        f'User request: "{user_prompt}"\n\n'
+        f'User request: "{user_prompt.lower()}"\n\n'
         f"The function to call is: \""
     )
 
 
 def build_prompt_for_argument(
     user_prompt: str,
-    function_name: str,
-    arg_name: str,
-    arg_type: str
+    function: FunctionDef,
+    param_name: str,
+    param_type: str,
+    already_extracted: dict,  # type: ignore[type-arg]
 ) -> str:
-    """Build the prompt for one argument value.
+    """
+    Build a prompt that asks the LLM to extract one specific argument.
 
     Args:
-        user_prompt: the natural language request from the user.
-        function_name: the chosen function name.
-        arg_name: the name of the argument to fill.
-        arg_type: the type of the argument (string, number, boolean).
+        user_prompt: The user's natural language request.
+        function: The selected function definition.
+        param_name: The name of the parameter to extract.
+        param_type: The expected type ("number", "string", "boolean").
+        already_extracted: Parameters already extracted (for context).
 
     Returns:
-        A prompt string ending so the LLM starts generating
-        the argument value immediately.
+        A formatted prompt string ending right before the argument value.
     """
-    lines = [f"User request: {user_prompt}", f"Function: {function_name}"]
-    if arg_type == "string":
-        lines.append(f'Fill argument "{arg_name}" (type: {arg_type}): "')
-    else:
-        lines.append(f'Fill argument "{arg_name}" (type: {arg_type}): ')
-    return "\n".join(lines)
+    param_context = ""
+    if already_extracted:
+        pairs = ", ".join(
+            f'"{k}": {_format_value(v)}' for k, v in already_extracted.items()
+        )
+        param_context = f"\nAlready extracted: {pairs}"
+
+    type_hint = _type_hint(param_type)
+
+    return (
+        f"You are a function-calling assistant.\n"
+        f'Function: "{function.name}" — {function.description}\n'
+        f'User request: "{user_prompt}"\n'
+        f"{param_context}\n"
+        f'Extract the value for parameter "{param_name}" ({type_hint}).\n\n'
+        f'The value of "{param_name}" is: '
+    )
+
+
+def _type_hint(param_type: str) -> str:
+    """Return a human-readable type description."""
+    hints = {
+        "number": "a numeric value, no quotes",
+        "float": "a decimal number, no quotes",
+        "integer": "an integer, no quotes",
+        "string": "a text value in double quotes",
+        "boolean": "true or false (no quotes)",
+    }
+    return hints.get(param_type, "a value")
+
+
+def _format_value(value: object) -> str:
+    """Format an extracted value for display in prompts."""
+    if isinstance(value, str):
+        return f'"{value}"'
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
 
 
 

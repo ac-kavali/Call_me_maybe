@@ -37,7 +37,7 @@ class Data:
         self.functions_definition: List[FunctionDef] = [
             FunctionDef(**fn) for fn in json_function_def
         ]
-
+        self.output_path = output_path
 
     def arg_parsing (self):
         parser = ArgumentParser()
@@ -48,3 +48,8 @@ class Data:
         args = parser.parse_args()
 
         return [args.functions_definition, args.input, args.output]
+
+    def data_output(self, function_name, parameters):
+        # with open(self.output_path(), "w") as output:
+        #     json
+        pass
