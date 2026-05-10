@@ -19,26 +19,34 @@ model = Small_LLM_Model()
 data = Data()
 
 class Vocabulary:    #The class that controls the llm vocabulary
-    """Loads and indexes the model vocabulary once."""
     def __init__(self) -> None:
+        """
+        Initialize vocabulary and precompute the function name mask.
 
-        path = model.get_path_to_vocab_file()
-        with open(path, "r", encoding="utf-8") as f:
+        """
+        functions: list[FunctionDef] = data.functions_definition
+        vocab_path: str = model.get_path_to_vocab_file()
+        with open(vocab_path, "r", encoding="utf-8") as f:
             raw: Dict[str, int] = json.load(f)
 
-        # Raw vocab classification
-        self.id_to_token: Dict[int, str] = {v: k for k, v in raw.items()}
+        # Full vocabulary mappings
         self.token_to_id: Dict[str, int] = raw
-        self.size: int = len(raw)
-        # Raw vocab definition
-        fun_allowed_vocab = self.get_fun_vocab()
-        # id → token_string
-        self.fun_id_to_token: Dict[int, str] = fun_allowed_vocab
-        # token_string → id
-        self.fun_token_to_id: Dict[str, int] = {v: k for k, v in fun_allowed_vocab.items() }
-        self.fun_size: int = len(fun_allowed_vocab)
+        self.id_to_token: Dict[int, str] = {v: k for k, v in raw.items()}
+        logit_example = model.get_logits_from_input_ids([1])
+        self.size: int = len(logit_example)
 
-    def _build_fun_vocab(self, functions: List[Functions]) -> Dict[str, int]:
+        # Function-name-only vocabulary (tokens that appear in any function name)
+        self.fun_token_to_id: Dict[str, int] = self._build_fun_vocab(functions)
+        self.fun_id_to_token: Dict[int, str] = {
+            v: k for k, v in self.fun_token_to_id.items()
+        }
+        self.fun_size: int = len(self.fun_token_to_id)
+
+        # Precomputed additive mask for function name generation
+        # Shape: [vocab_size] — 0.0 for valid tokens, -inf for invalid ones
+        self.M_fun_name: NDArray = self._build_fun_name_mask(functions)
+
+    def _build_fun_vocab(self, functions: List[FunctionDef]) -> Dict[str, int]:
         """
         Build a restricted vocabulary of tokens that are valid
         substrings of at least one allowed function name.
@@ -73,6 +81,31 @@ class Vocabulary:    #The class that controls the llm vocabulary
 
         return fun_vocab
 
+    def _build_fun_name_mask(self, functions: List[FunctionDef]) -> NDArray:
+        """
+        Build an additive logit mask of shape [vocab_size].
+
+        Valid function name tokens get 0.0 (no change to logits).
+        All other tokens get -inf (effectively blocked).
+
+        The mask is added directly to raw logits before argmax:
+            next_token_id = argmax(logits + M_fun_name)
+
+        Args:
+            functions: List of Functions whose names define the valid tokens.
+
+        Returns:
+            ndarray of shape [vocab_size] with 0.0 or -inf values.
+        """
+        # Start with everything blocked
+        mask: NDArray = np.full(self.size, _NEG_INF, dtype=np.float32) #------------------------>
+
+        # Unblock only tokens present in fun_token_to_id
+        for token_id in self.fun_token_to_id.values():
+            mask[token_id] = 0.0
+
+        return mask
+
     def token_str(self, token_id: int) -> str:
         """Return the raw string for a token id (empty string if unknown)."""
         return self.id_to_token.get(token_id, "")
@@ -81,41 +114,68 @@ class Vocabulary:    #The class that controls the llm vocabulary
         """Return token ids whose string is in *strings*."""
         return {self.token_to_id[s] for s in strings if s in self.token_to_id}
 
+
 vocab = Vocabulary()
 
 class Constrained_Decoder:
     def __init__(self):
         self.model = model
 
-    def select_function(self, prompt, allowed_functions: List[str]) -> str:
+    def select_function_name (
+            self,
+            prompt: str,
+            functions: List[FunctionDef],
+    ) -> str:
+        """
+        Select the best function name for a given prompt using constrained decoding.
 
-        already_generated = ""
-        prompt_ids = model.encode(prompt).tolist()[0]
-        remaining_fun = allowed_functions
-        for i in range(_MAX_TOKENS):
-            logits = model.get_logits_from_input_ids(prompt_ids)
-            logits = np.array(logits, dtype=np.float32) #Convert logits to np.NDArray
-            mask = np.zeros(len(logits), dtype=bool)
-            mask: NDArray = self._build_prefix_mask(remaining_fun, already_generated, mask)
-            if not mask.any():
-                return already_generated.strip()
+        Uses the precomputed function name mask (M_fun_name) to restrict token
+        selection to valid function name tokens only, generating the name
+        character by character until a closing quote is produced.
 
-            logits = self._apply_mask(logits, mask)
+        Args:
+            prompt: The Prompts object containing the natural language request.
+            functions: List of available Functions to choose from.
 
-            next_id = int(np.argmax(logits))
-            next_str = self._clean_token(vocab.token_str(next_id))
-            already_generated += next_str
-            remaining_fun = [
-                fn for fn in remaining_fun
-                if fn.startswith(already_generated)
-            ]
-            if already_generated in allowed_functions:
-                return already_generated
+        Returns:
+            The selected function name as a string.
+        """
+        # Build the list of function descriptions for the selection prompt
+        function_descriptions: List[str] = [
+            f"name: {fn.name} - description: {fn.description}\n"
+            for fn in functions
+        ]
 
-            if '"' in already_generated:
-                return already_generated
+        # Build the full selection prompt shown to the model
+        selection_prompt: str = (
+            f'choose a function name from the following functions'
+            f'\n\n{"".join(function_descriptions)}'
+            f'\nfor the following prompt '
+            f'"{prompt}"\nchosen name: "'
+        )
 
-        return ""
+        selected_name: str = ""
+
+        # Generate the function name token by token using constrained decoding
+        while True:
+            input_ids: List[int] = model.encode(selection_prompt)[0].tolist()
+
+            # Add M_fun_name mask to restrict logits to valid function name tokens
+            masked_logits = model.get_logits_from_input_ids(input_ids) + vocab.M_fun_name
+
+            next_token_id = np.argmax(masked_logits)
+            next_token: str = model.decode(next_token_id)
+            allowed_functions = [fn.name for fn in data.functions_definition]
+            # Stop when the model generates a closing quote
+            if '"' in next_token or selected_name in allowed_functions:
+                break
+
+            # Append the token to both the running prompt and the name
+            selection_prompt += next_token
+            selected_name += next_token
+
+        return selected_name
+
 
     def select_arguments (self, prompt, function: FunctionDef):
         already_extracted: Dict = {}
