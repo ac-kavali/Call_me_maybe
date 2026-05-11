@@ -1,50 +1,134 @@
-from pydantic import BaseModel
-from typing import Dict, List
-from argparse import ArgumentParser
+"""Pydantic data-models and CLI data loader used across the project."""
+
 import json
+import sys
+from argparse import ArgumentParser
+from typing import Dict, List, Tuple
+
+from pydantic import BaseModel, ValidationError
 
 
 class Prompt(BaseModel):
+    """Wraps a single prompt string for Pydantic validation."""
+
     prompt: str
 
+
 class Parameter(BaseModel):
+    """Describes one parameter of a function (type only)."""
+
     type: str
 
+
 class FunctionDef(BaseModel):
+    """Full metadata for one callable function exposed to the LLM."""
+
     name: str
     description: str
     parameters: Dict[str, Parameter]
     returns: Parameter
 
 
-
 class Data:
-    def __init__(self):
-        functions_definition_path, prompts_path, output_path = self.arg_parsing()
-        # Open function definitions
-        with open(functions_definition_path, "r") as f:
-            json_function_def: List[dict] = json.load(f)
+    """Loads and exposes functions, prompts, and output path from CLI args."""
 
-        # Open prompts JSON file
-        with open(prompts_path, "r") as f:
-            json_prompts_def: List[dict] = json.load(f)
+    def __init__(self) -> None:
+        """Parse CLI args, read JSON files, and validate all records."""
+        functions_path, prompts_path, output_path = self._arg_parsing()
 
-        # List of Prompt object just be valid with the BaseModel .
-        prompt_validation: List[Prompt] = [Prompt(prompt=p["prompt"]) for p in json_prompts_def]
-        # List of the prompt filtered to be like ["example of the prompt1", "example of prompt 2" ...]
-        self.prompts: List[str] = [p.prompt for p in prompt_validation]
-        # List of Functions(obj) metadata to be added to the prompt
-        self.functions_definition: List[FunctionDef] = [
-            FunctionDef(**fn) for fn in json_function_def
-        ]
-        self.output_path = output_path
+        # ── load function definitions ────────────────────────────────────
+        try:
+            with open(functions_path, "r", encoding="utf-8") as f:
+                json_function_def: List[dict] = json.load(f)
+        except FileNotFoundError:
+            print(
+                f"[ERROR] Functions file not found: '{functions_path}'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        except json.JSONDecodeError as exc:
+            print(
+                f"[ERROR] Invalid JSON in functions file: {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    def arg_parsing (self):
-        parser = ArgumentParser()
+        # ── load prompts ─────────────────────────────────────────────────
+        try:
+            with open(prompts_path, "r", encoding="utf-8") as f:
+                json_prompts_def: List[dict] = json.load(f)
+        except FileNotFoundError:
+            print(
+                f"[ERROR] Prompts file not found: '{prompts_path}'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        except json.JSONDecodeError as exc:
+            print(
+                f"[ERROR] Invalid JSON in prompts file: {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-        parser.add_argument("--functions_definition", "-f", default="data/input/functions_definition.json")
-        parser.add_argument("--input", "-i", default="data/input/function_calling_tests.json")
-        parser.add_argument("--output", "-o", default="data/output/function_calling_tests.json")
+        # ── validate and unwrap prompts ──────────────────────────────────
+        # Pydantic validation ensures each entry has a 'prompt' string key.
+        try:
+            prompt_objs: List[Prompt] = [
+                Prompt(prompt=p["prompt"]) for p in json_prompts_def
+            ]
+        except (ValidationError, KeyError) as exc:
+            print(
+                f"[ERROR] Prompt validation failed: {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # Plain list of strings for iteration throughout the pipeline
+        self.prompts: List[str] = [p.prompt for p in prompt_objs]
+
+        # ── validate and build FunctionDef objects ───────────────────────
+        try:
+            self.functions_definition: List[FunctionDef] = [
+                FunctionDef(**fn) for fn in json_function_def
+            ]
+        except (ValidationError, TypeError) as exc:
+            print(
+                f"[ERROR] FunctionDef validation failed: {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        self.output_path: str = output_path
+
+    # ── private helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _arg_parsing() -> Tuple[str, str, str]:
+        """Register and parse CLI arguments.
+
+        Returns:
+            Tuple of (functions_definition_path, prompts_path, output_path).
+        """
+        parser = ArgumentParser(
+            description="Constrained LLM function-calling decoder."
+        )
+        parser.add_argument(
+            "--functions_definition",
+            "-f",
+            default="data/input/functions_definition.json",
+            help="Path to the JSON file with function definitions.",
+        )
+        parser.add_argument(
+            "--input",
+            "-i",
+            default="data/input/function_calling_tests.json",
+            help="Path to the JSON file with prompts.",
+        )
+        parser.add_argument(
+            "--output",
+            "-o",
+            default="data/output/function_calling_tests.json",
+            help="Path where decoded results will be written.",
+        )
         args = parser.parse_args()
-
-        return [args.functions_definition, args.input, args.output]
+        return args.functions_definition, args.input, args.output
