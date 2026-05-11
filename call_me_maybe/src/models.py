@@ -49,7 +49,3 @@ class Data:
 
         return [args.functions_definition, args.input, args.output]
 
-    def data_output(self, function_name, parameters):
-        # with open(self.output_path(), "w") as output:
-        #     json
-        pass
