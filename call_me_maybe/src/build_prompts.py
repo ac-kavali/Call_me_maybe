@@ -1,38 +1,6 @@
 from src.models import FunctionDef
 from typing import Dict
 
-def build_function_selection_prompt(
-    user_prompt: str,
-    functions,
-) -> str:
-    """
-    Build a prompt that asks the LLM to select the correct function name.
-
-    The prompt is designed so the model's next token is naturally one of
-    the valid function names. We rely on constrained decoding — not this
-    prompt alone — to enforce the output, but a clear prompt still helps.
-
-    Args:
-        user_prompt: The user's natural language request.
-        functions: Available function definitions.
-
-    Returns:
-        A formatted prompt string.
-    """
-    fn_descriptions = "\n".join(
-        f'  - "{fn.name}": {fn.description}' for fn in functions
-    )
-
-    return (
-        f"You are a function-calling assistant.\n"
-        f"Select the best function for the user's request.\n\n"
-        f'Example: prompt contains "Greet" you return "fn_greet"'
-        f"Available functions:\n{fn_descriptions}\n\n"
-        f'User request: "{user_prompt.lower()}"\n\n'
-        f"The function to call is: \""
-    )
-
-
 def build_prompt_for_argument(
     user_prompt: str,
     function: FunctionDef,

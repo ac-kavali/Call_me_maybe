@@ -48,4 +48,3 @@ class Data:
         args = parser.parse_args()
 
         return [args.functions_definition, args.input, args.output]
-
