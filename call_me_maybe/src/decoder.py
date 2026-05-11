@@ -45,6 +45,26 @@ class Vocabulary:    #The class that controls the llm vocabulary
         # Precomputed additive mask for function name generation
         # Shape: [vocab_size] — 0.0 for valid tokens, -inf for invalid ones
         self.M_fun_name: NDArray = self._build_fun_name_mask(functions)
+        self.M_chars: NDArray = self._build_chars_mask()
+
+    def _build_chars_mask (self) -> NDArray:
+        """
+        Build an additive mask that allows any printable character token,
+        except unescaped double quotes (those terminate the string).
+        0.0 for valid tokens, _NEG_INF for invalid ones.
+        """
+        mask: NDArray = np.full(self.size, _NEG_INF, dtype=np.float32)
+
+        for token_str, token_id in self.token_to_id.items():
+            clean: str = self._clean_token(token_str)
+            # Allow any printable token — the generation loop handles quote stopping
+            if clean and clean.isprintable():
+                mask[token_id] = 0.0
+
+        return mask
+
+    def _clean_token (self, token_str: str) -> str:
+        return token_str.replace("Ġ", " ")
 
     def _build_fun_vocab(self, functions: List[FunctionDef]) -> Dict[str, int]:
         """
@@ -187,10 +207,9 @@ class Constrained_Decoder:
                 if param_type in ("number", "float"):
                     arg = self.generate_number(param_prompt)
                 elif param_type == "boolean":
-                    arg = self._generate_boolean(prompt)
+                    arg = self._generate_boolean(param_prompt)
                 else:
-                    arg = self.generate_str(prompt)
-                    print(prompt)
+                    arg = self.generate_str(param_prompt, name, prompt)
 
                 already_extracted[name] = arg
 
@@ -238,58 +257,55 @@ class Constrained_Decoder:
         except ValueError:
             return 0.0
 
-    def _build_prefix_mask (self, allowed_functions, already_generated, mask) -> NDArray:
-        # List initialized of False used to be modified to make just the allowed function names True
-
-        # Loop over all tokens and check if this can be a part of at least one allowed function
-        for token_str, token_id in vocab.fun_token_to_id.items():
-            print("already generated: ", already_generated)
-            cleaned_token = self._clean_token(token_str)
-            candidate = already_generated + cleaned_token
-            print("one_session--------------------------------")
-            for function_name in allowed_functions:
-                if function_name.startswith(candidate):
-                    mask[token_id] = True
-                    print("this token selected: ", vocab.id_to_token[token_id])
-
-        return mask
 
     def _apply_mask (self, logits: NDArray, mask: NDArray) -> NDArray:
         logits[~mask] = _NEG_INF
         return logits
 
-    def generate_str(self, prompt):
+    def generate_str (self, prompt: str, param_name: str, original_prompt: str) -> str:
         """
-                Generate a JSON string value (without surrounding quotes).
+        Generate a JSON string value using the same approach as the reference:
+        - Uses vocab.M_chars mask to restrict to printable tokens
+        - Uses model.decode for accurate detokenization
+        - Stops on unescaped closing double quote
 
-                Args:
-                    prompt: Prompt ending right before the opening quote of the value.
+        Args:
+            prompt: The full p_prompt built so far (ends with the param name + ': "')
+            param_name: The parameter name being generated (for context).
+            original_prompt: The original natural language prompt.
 
-                Returns:
-                    The extracted string (without quotes).
-                """
-        # We inject the opening quote in the pipeline; here we just collect content
-        generated = ""
-        # The prompt already ends with ': ' so we add the opening quote
-        full_prompt = prompt + '"'
-        input_ids = self.model.encode(full_prompt).tolist()[0]
+        Returns:
+            The extracted string value (without surrounding quotes).
+        """
+        p_prompt: str = prompt
+        s_accum: str = ""
 
-        for _ in range(_STRING_MAX):
-            logits = model.get_logits_from_input_ids(input_ids)
-            logits = np.array(logits, dtype=np.float32)  # Convert logits to np.NDArray
-            next_id = int(np.argmax(logits))
-            next_str = self._clean_token(vocab.token_str(next_id))
+        while True:
+            input_ids: List[int] = model.encode(p_prompt)[0].tolist()
 
-            # Stop at closing double quote
-            if '"' in next_str:
-                # Take content before the quote
-                generated += next_str.split('"')[0]
+            # Use M_chars mask — only allow printable character tokens
+            masked_logits = (
+                    model.get_logits_from_input_ids(input_ids) + vocab.M_chars
+            )
+            s_tok_id = np.argmax(masked_logits)
+            s_tok: str = model.decode(s_tok_id)
+
+            # Unescaped closing quote → end of string
+            if '"' in s_tok and '\\"' not in s_tok:
+                # Take only content before the quote
+                s_tok = s_tok.split('"', 1)[0] + '"'
+                s_accum += s_tok.split('"', 1)[0]
+                p_prompt += s_tok
                 break
 
-            generated += next_str
-            input_ids = input_ids + [next_id]
+            p_prompt += s_tok
+            s_accum += s_tok
 
-        return generated.strip()
+            # Clean up escaped quotes in accumulator to avoid false positives
+            if '\\"' in s_accum:
+                s_accum = s_accum.replace("\\", "")
+
+        return s_accum
 
 
     def _generate_boolean(self, prompt):

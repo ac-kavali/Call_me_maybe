@@ -2,7 +2,6 @@ from src.models import Data, Parameter
 from llm_sdk import  Small_LLM_Model
 from typing import List, Dict
 from src.decoder import Constrained_Decoder
-from src.build_prompts import build_function_selection_prompt
 
 
 data = Data()
@@ -15,10 +14,6 @@ for i, prompt in enumerate(prompts):
     print(f"[{i + 1}/{len(data.prompts)}] processing...")
     arguments_d = data.functions_definition
 
-    # prompt to make ids from
-    #structured_fun_prompt = build_function_selection_prompt(prompt, data.functions_definition) ----->needed before
-
-
     # the picked function name
     chosen_function = decoder.select_function_name(prompt, data.functions_definition)
     print(prompt)
@@ -27,7 +22,7 @@ for i, prompt in enumerate(prompts):
     fn_map = {fn.name: fn for fn in data.functions_definition}
     if chosen_function in fn_map:
         chosen_function_obj = fn_map[chosen_function]
-        arguments: Dict = decoder.select_arguments(prompt, chosen_function_obj)
+        arguments: Dict = decoder.select_arguments(prompt,chosen_function_obj)
 
 
     # Map back to the FunctionDef
