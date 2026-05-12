@@ -6,7 +6,6 @@ from typing import Dict, List
 
 from src.decoder import Constrained_Decoder
 from src.models import Data, FunctionDef
-from llm_sdk import Small_LLM_Model  # noqa: F401 – imported for side-effects
 
 
 def main() -> None:
@@ -17,7 +16,7 @@ def main() -> None:
         print(f"[ERROR] Failed to initialise Data: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # Pre-build lookup structures once to avoid repeated iteration
+    # Store simple list of data to easy access cross the program
     allowed_functions: List[str] = [
         fn.name for fn in data.functions_definition
     ]

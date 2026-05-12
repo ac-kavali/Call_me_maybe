@@ -25,7 +25,7 @@ def build_prompt_for_argument(
         A fully formatted prompt string ending just before the parameter
         value so the model can complete it directly.
     """
-    # Serialise previously extracted params as partial JSON key-value pairs
+    # Accumulate What is extracted params as partial JSON key-value pairs
     already_extracted_json: str = ""
     if already_extracted:
         pairs = ", ".join(
@@ -167,7 +167,8 @@ def _type_hint(param_type: str) -> str:
 
 
 def _format_value(value: object) -> str:
-    """Serialise an extracted parameter value for inline JSON display.
+    """format an extracted parameter value for inline JSON display
+    like True be 'true' "Ahmed" being '"Ahmed"'.
 
     Args:
         value: The Python value to format (str, bool, or numeric).
@@ -178,6 +179,5 @@ def _format_value(value: object) -> str:
     if isinstance(value, str):
         return f'"{value}"'
     if isinstance(value, bool):
-        # bool check must come before int because bool is a subclass of int
         return "true" if value else "false"
     return str(value)

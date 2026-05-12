@@ -1,5 +1,3 @@
-"""Constrained decoder: vocabulary masking + greedy generation helpers."""
-
 import json
 import sys
 from typing import Dict, List, Set
@@ -18,19 +16,20 @@ _NEG_INF: float = -1e9
 _MAX_TOKENS: int = 100
 
 # Maximum tokens allowed for a string value
-_STRING_MAX: int = 128
+_STRING_MAX: int = 40
 
-
-# ── module-level singletons (initialised once at import time) ────────────────
-
-model = Small_LLM_Model()
+# ── Model and data objects initialized once at import time ───────────────
 data = Data()
+try:
+    model = Small_LLM_Model(data.model)
+except Exception as ex:
+    print(f"Model usage error : {ex}")
+    exit(1)
 
 
 # ── Vocabulary ───────────────────────────────────────────────────────────────
-
 class Vocabulary:
-    """Wraps the LLM vocabulary and pre-computes logit masks.
+    """Operate the LLM vocabulary and pre-computes logit masks.
 
     Attributes:
         token_to_id:    Full vocab mapping token-string → token-id.
@@ -46,7 +45,7 @@ class Vocabulary:
     """
 
     def __init__(self) -> None:
-        """Initialise vocabulary mappings and pre-compute both masks."""
+        """Initialize vocabulary mappings and pre-compute both masks."""
         functions: List[FunctionDef] = data.functions_definition
         vocab_path: str = model.get_path_to_vocab_file()
 
@@ -79,7 +78,7 @@ class Vocabulary:
         }
         self.fun_size: int = len(self.fun_token_to_id)
 
-        # Pre-computed masks (computed once, reused on every decode step)
+        # pre-computed masks (computed once, reused on every decode step)
         self.M_fun_name: NDArray = self._build_fun_name_mask(functions)
         self.M_chars: NDArray = self._build_chars_mask()
 
@@ -201,7 +200,7 @@ class Vocabulary:
 
     @staticmethod
     def _clean_token(token_str: str) -> str:
-        """Normalise BPE space markers so token strings compare cleanly.
+        """Normalize BPE space markers so token strings compare cleanly.
 
         Args:
             token_str: Raw token string that may contain 'Ġ' markers.
@@ -212,7 +211,7 @@ class Vocabulary:
         return token_str.replace("Ġ", " ")
 
 
-# Module-level vocabulary singleton (shared with Constrained_Decoder)
+# Initialize Vocab manager (shared with Constrained_Decoder)
 vocab = Vocabulary()
 
 
@@ -349,6 +348,8 @@ class Constrained_Decoder:
                 param_type,
                 already_extracted,
             )
+
+            print(param_prompt)
 
             try:
                 if param_type in ("number", "float"):

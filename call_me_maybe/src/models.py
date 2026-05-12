@@ -1,10 +1,7 @@
-"""Pydantic data-models and CLI data loader used across the project."""
-
 import json
 import sys
 from argparse import ArgumentParser
-from typing import Dict, List, Tuple
-
+from typing import Dict, List, Any
 from pydantic import BaseModel, ValidationError
 
 
@@ -34,8 +31,8 @@ class Data:
 
     def __init__(self) -> None:
         """Parse CLI args, read JSON files, and validate all records."""
-        functions_path, prompts_path, output_path = self._arg_parsing()
-
+        functions_path, prompts_path, output_path, model = self._arg_parsing()
+        print(prompts_path)
         # ── load function definitions ────────────────────────────────────
         try:
             with open(functions_path, "r", encoding="utf-8") as f:
@@ -97,21 +94,21 @@ class Data:
                 file=sys.stderr,
             )
             sys.exit(1)
-
+        # defining output path from argument or default
         self.output_path: str = output_path
+        # Defining the model used in constrained decoding from args or default
+        self.model = model
 
     # ── private helpers ──────────────────────────────────────────────────────
 
     @staticmethod
-    def _arg_parsing() -> Tuple[str, str, str]:
+    def _arg_parsing() -> tuple[Any, Any, Any, Any]:
         """Register and parse CLI arguments.
 
         Returns:
             Tuple of (functions_definition_path, prompts_path, output_path).
         """
-        parser = ArgumentParser(
-            description="Constrained LLM function-calling decoder."
-        )
+        parser = ArgumentParser()
         parser.add_argument(
             "--functions_definition",
             "-f",
@@ -127,8 +124,14 @@ class Data:
         parser.add_argument(
             "--output",
             "-o",
-            default="data/output/function_calling_tests.json",
+            default="data/output/function_calls.json",
             help="Path where decoded results will be written.",
         )
+        parser.add_argument(
+            "--model",
+            "-m",
+            default="Qwen/Qwen3-0.6B",
+            help="HuggingFace model identifier to load via llm_sdk.",
+        )
         args = parser.parse_args()
-        return args.functions_definition, args.input, args.output
+        return args.functions_definition, args.input, args.output, args.model
