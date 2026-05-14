@@ -201,13 +201,13 @@ class Vocabulary:
         return token_str.replace("Ġ", " ")
 
 
-# Initialize Vocab manager (shared with Constrained_Decoder)
+# Initialize Vocab manager (shared with ConstrainedDecoder)
 vocab = Vocabulary()
 
 
-# ── Constrained_Decoder ──────────────────────────────────────────────────────
+# ── ConstrainedDecoder ──────────────────────────────────────────────────────
 
-class Constrained_Decoder:
+class ConstrainedDecoder:
     """Greedy constrained decoder that wraps the Small_LLM_Model.
 
     All generation methods apply additive logit masks so the model can

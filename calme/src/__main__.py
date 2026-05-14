@@ -4,7 +4,7 @@ import json
 import sys
 from typing import Dict, List, Any
 
-from src.decoder import Constrained_Decoder
+from src.decoder import ConstrainedDecoder
 from src.models import Data, FunctionDef
 
 
@@ -25,7 +25,7 @@ def main() -> None:
     }
 
     try:
-        decoder = Constrained_Decoder()
+        decoder = ConstrainedDecoder()
     except Exception as exc:  # broad catch: SDK may raise anything on init
         print(
             f"[ERROR] Failed to initialise decoder: {exc}",

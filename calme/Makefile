@@ -25,13 +25,14 @@ lint-strict:
 	mypy ./src --strict
 
 setup:
+	# curl -LsSf https://astral.sh/uv/install.sh | sh
 	echo 'export UV_CACHE_DIR=~/goinfre/uv/cache' >> ~/.zshrc
 	echo 'export UV_TOOL_DIR=~/goinfre/uv/tools' >> ~/.zshrc
 	echo 'export HF_HOME=~/goinfre/hf_cache' >> ~/.zshrc
 	echo 'export HUGGINGFACE_HUB_CACHE=~/goinfre/hf_cache' >> ~/.zshrc
 	echo 'export PIP_CACHE_DIR=~/goinfre/pip/cache' >> ~/.zshrc
-	source ~/.zshrc
 	mkdir -p ~/goinfre/hf_cache
 	uv venv ~/goinfre/.venv
 	ln -s ~/goinfre/.venv .venv   # symlink into your project
 	uv sync
+	mkdir data/output
