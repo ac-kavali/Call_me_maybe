@@ -1,5 +1,9 @@
-src/__pycache__.py
+src/__pycache__
 .venv
 llm_sdk/__pycache.py
 data/output
 .mypy_cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
